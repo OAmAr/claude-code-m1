@@ -137,6 +137,9 @@
 </div>
 
 <script>
+// Piece constants: uppercase = White, lowercase = Black
+// P/p=pawn, R/r=rook, N/n=knight, B/b=bishop, Q/q=queen, K/k=king
+
 const PIECES = {
   K:'♔', Q:'♕', R:'♖', B:'♗', N:'♘', P:'♙',
   k:'♚', q:'♛', r:'♜', b:'♝', n:'♞', p:'♟'
@@ -204,10 +207,12 @@ function rawMoves(b, i, t, ep, cas) {
   if (pp === 'p') {
     const dir = t === 'w' ? -1 : 1;
     const startRow = t === 'w' ? 6 : 1;
+    // forward
     if (isInBounds(r+dir, c) && !b[idx(r+dir,c)]) {
       moves.push(idx(r+dir,c));
       if (r === startRow && !b[idx(r+2*dir,c)]) moves.push(idx(r+2*dir,c));
     }
+    // captures
     for (const dc of [-1,1]) {
       if (isInBounds(r+dir, c+dc)) {
         const sq = b[idx(r+dir,c+dc)];
@@ -239,6 +244,7 @@ function rawMoves(b, i, t, ep, cas) {
       if (isInBounds(r+dr,c+dc) && !friend(b[idx(r+dr,c+dc)],t))
         moves.push(idx(r+dr,c+dc));
     }
+    // Castling
     if (t === 'w' && r === 7 && c === 4) {
       if (cas.wK && !b[idx(7,5)] && !b[idx(7,6)] && b[idx(7,7)]==='R')
         moves.push(idx(7,6));
@@ -261,6 +267,7 @@ function findKing(b, t) {
 }
 
 function isAttacked(b, i, byColor, ep, cas) {
+  const opp = byColor === 'w' ? 'b' : 'w';
   for (let s = 0; s < 64; s++) {
     if (b[s] && color(b[s]) === byColor) {
       if (rawMoves(b, s, byColor, ep, cas).includes(i)) return true;
@@ -281,12 +288,14 @@ function applyMove(b, from, to, t, ep, cas) {
   let newEp = null;
   const newCas = {...cas};
 
+  // En passant capture
   if (pp === 'p' && to === ep) {
     const capRow = t === 'w' ? rc(to)[0]+1 : rc(to)[0]-1;
     captured = nb[idx(capRow, rc(to)[1])];
     nb[idx(capRow, rc(to)[1])] = '';
   }
 
+  // Castling move rook
   if (pp === 'k') {
     const [fr,fc] = rc(from);
     const [tr,tc] = rc(to);
@@ -298,6 +307,7 @@ function applyMove(b, from, to, t, ep, cas) {
     else { newCas.bK = false; newCas.bQ = false; }
   }
 
+  // Update castling rights for rook moves
   if (pp === 'r') {
     if (from === idx(7,0)) newCas.wQ = false;
     if (from === idx(7,7)) newCas.wK = false;
@@ -305,6 +315,7 @@ function applyMove(b, from, to, t, ep, cas) {
     if (from === idx(0,7)) newCas.bK = false;
   }
 
+  // Pawn double push -> en passant
   if (pp === 'p') {
     const [fr,fc] = rc(from);
     const [tr,tc] = rc(to);
@@ -314,6 +325,7 @@ function applyMove(b, from, to, t, ep, cas) {
   nb[to] = p;
   nb[from] = '';
 
+  // Promotion
   if (pp === 'p') {
     const [tr] = rc(to);
     if (tr === 0 && t === 'w') nb[to] = 'Q';
@@ -326,6 +338,7 @@ function applyMove(b, from, to, t, ep, cas) {
 function legalMovesFor(b, i, t, ep, cas) {
   return rawMoves(b, i, t, ep, cas).filter(to => {
     const { nb, newEp, newCas } = applyMove(b, i, to, t, ep, cas);
+    // Can't castle through check
     if (b[i] && b[i].toLowerCase() === 'k') {
       const [fr,fc] = rc(i);
       const [tr,tc] = rc(to);
@@ -424,9 +437,14 @@ function render() {
   const boardEl = document.getElementById('board');
   boardEl.innerHTML = '';
   const kingInCheck = turn && inCheck(board, turn, enPassant, castling) ? findKing(board, turn) : -1;
+  const lastMove = history.length ? history[history.length-1] : null;
+  const lastFrom = lastMove ? null : null; // we track from render call
+  // get last move squares from board diff — use history state
   let lmFrom = -1, lmTo = -1;
   if (history.length > 0) {
+    // last move: compare previous board to current
     const prev = history[history.length-1].board;
+    // squares that differ
     const diffs = [];
     for (let i = 0; i < 64; i++) if (prev[i] !== board[i]) diffs.push(i);
     if (diffs.length >= 2) { lmFrom = diffs[0]; lmTo = diffs[diffs.length-1]; }
@@ -449,6 +467,7 @@ function render() {
     boardEl.appendChild(sq);
   }
 
+  // Rank labels (8 down to 1)
   const rl = document.getElementById('rank-labels');
   rl.innerHTML = '';
   for (let r = 0; r < 8; r++) {
@@ -456,6 +475,7 @@ function render() {
     s.textContent = 8 - r;
     rl.appendChild(s);
   }
+  // File labels
   const fl = document.getElementById('file-labels');
   fl.innerHTML = '';
   for (const f of ['a','b','c','d','e','f','g','h']) {
