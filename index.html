@@ -223,7 +223,6 @@
     <div id="controls">
       <button onclick="newGame()">New Game</button>
       <button onclick="undoMove()">Undo</button>
-      <button onclick="flipBoard()">Flip Board</button>
     </div>
   </div>
   <div id="move-log">
@@ -270,10 +269,6 @@ function newGame() {
   setStatus("White's turn");
 }
 
-function flipBoard() {
-  flipped = !flipped;
-  render();
-}
 
 function isWhite(p) { return p && p === p.toUpperCase(); }
 function isBlack(p) { return p && p === p.toLowerCase(); }
@@ -610,6 +605,7 @@ function renderPromoOverlay() {
 }
 
 function render() {
+  if (turn !== null) flipped = (turn === 'b');
   const boardEl = document.getElementById('board');
   boardEl.innerHTML = '';
   const kingInCheck = turn && inCheck(board, turn, enPassant, castling) ? findKing(board, turn) : -1;
