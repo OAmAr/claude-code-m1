@@ -53,6 +53,10 @@
     margin-left: 24px;
   }
   .file-labels span { width: var(--sq); height: 20px; }
+  .board-container {
+    position: relative;
+    display: inline-block;
+  }
   #board {
     display: grid;
     grid-template-columns: repeat(8, var(--sq));
@@ -100,6 +104,8 @@
     margin-top: 16px;
     display: flex;
     gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
   }
   button {
     padding: 8px 20px;
@@ -158,6 +164,39 @@
   .log-num { color: #666; }
   .log-w   { color: #ddd; }
   .log-b   { color: #bbb; }
+  /* Promotion overlay */
+  #promo-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.65);
+    z-index: 10;
+    align-items: center;
+    justify-content: center;
+  }
+  #promo-overlay.active { display: flex; }
+  #promo-picker {
+    background: #2c2c54;
+    border: 1px solid #666;
+    border-radius: 10px;
+    padding: 10px;
+    display: flex;
+    gap: 6px;
+  }
+  .promo-btn {
+    width: calc(var(--sq) * 0.95);
+    height: calc(var(--sq) * 0.95);
+    font-size: calc(var(--sq) * 0.62);
+    background: #3d3d7a;
+    border: 1px solid #555;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+  }
+  .promo-btn:hover { background: #5a5ab0; }
 </style>
 </head>
 <body>
@@ -168,7 +207,12 @@
     <div id="board-wrap">
       <div class="rank-labels" id="rank-labels"></div>
       <div>
-        <div id="board"></div>
+        <div class="board-container">
+          <div id="board"></div>
+          <div id="promo-overlay">
+            <div id="promo-picker"></div>
+          </div>
+        </div>
         <div class="file-labels" id="file-labels"></div>
       </div>
     </div>
@@ -179,6 +223,7 @@
     <div id="controls">
       <button onclick="newGame()">New Game</button>
       <button onclick="undoMove()">Undo</button>
+      <button onclick="flipBoard()">Flip Board</button>
     </div>
   </div>
   <div id="move-log">
@@ -209,7 +254,8 @@ const INIT = [
 
 const FILES = 'abcdefgh';
 
-let board, turn, selected, legalMoves, history, castling, enPassant, capturedW, capturedB, moveLog;
+let board, turn, selected, legalMoves, history, castling, enPassant,
+    capturedW, capturedB, moveLog, pendingPromotion, flipped;
 
 function newGame() {
   board = [...INIT];
@@ -222,8 +268,15 @@ function newGame() {
   capturedW = [];
   capturedB = [];
   moveLog = [];
+  pendingPromotion = null;
+  // flipped is intentionally preserved across new games
   render();
   setStatus("White's turn");
+}
+
+function flipBoard() {
+  flipped = !flipped;
+  render();
 }
 
 function isWhite(p) { return p && p === p.toUpperCase(); }
@@ -261,12 +314,10 @@ function rawMoves(b, i, t, ep, cas) {
   if (pp === 'p') {
     const dir = t === 'w' ? -1 : 1;
     const startRow = t === 'w' ? 6 : 1;
-    // forward
     if (isInBounds(r+dir, c) && !b[idx(r+dir,c)]) {
       moves.push(idx(r+dir,c));
       if (r === startRow && !b[idx(r+2*dir,c)]) moves.push(idx(r+2*dir,c));
     }
-    // captures
     for (const dc of [-1,1]) {
       if (isInBounds(r+dir, c+dc)) {
         const sq = b[idx(r+dir,c+dc)];
@@ -298,7 +349,6 @@ function rawMoves(b, i, t, ep, cas) {
       if (isInBounds(r+dr,c+dc) && !friend(b[idx(r+dr,c+dc)],t))
         moves.push(idx(r+dr,c+dc));
     }
-    // Castling
     if (t === 'w' && r === 7 && c === 4) {
       if (cas.wK && !b[idx(7,5)] && !b[idx(7,6)] && b[idx(7,7)]==='R')
         moves.push(idx(7,6));
@@ -316,8 +366,7 @@ function rawMoves(b, i, t, ep, cas) {
 }
 
 function findKing(b, t) {
-  const k = t === 'w' ? 'K' : 'k';
-  return b.indexOf(k);
+  return b.indexOf(t === 'w' ? 'K' : 'k');
 }
 
 function isAttacked(b, i, byColor, ep, cas) {
@@ -333,7 +382,8 @@ function inCheck(b, t, ep, cas) {
   return isAttacked(b, findKing(b,t), t==='w'?'b':'w', ep, cas);
 }
 
-function applyMove(b, from, to, t, ep, cas) {
+// promoPiece: uppercase letter (Q/R/B/N); caller responsible for case
+function applyMove(b, from, to, t, ep, cas, promoPiece) {
   const nb = [...b];
   const p = nb[from];
   const pp = p.toLowerCase();
@@ -341,14 +391,12 @@ function applyMove(b, from, to, t, ep, cas) {
   let newEp = null;
   const newCas = {...cas};
 
-  // En passant capture
   if (pp === 'p' && to === ep) {
     const capRow = t === 'w' ? rc(to)[0]+1 : rc(to)[0]-1;
     captured = nb[idx(capRow, rc(to)[1])];
     nb[idx(capRow, rc(to)[1])] = '';
   }
 
-  // Castling move rook
   if (pp === 'k') {
     const [fr,fc] = rc(from);
     const [tr,tc] = rc(to);
@@ -360,7 +408,6 @@ function applyMove(b, from, to, t, ep, cas) {
     else { newCas.bK = false; newCas.bQ = false; }
   }
 
-  // Update castling rights for rook moves
   if (pp === 'r') {
     if (from === idx(7,0)) newCas.wQ = false;
     if (from === idx(7,7)) newCas.wK = false;
@@ -368,7 +415,6 @@ function applyMove(b, from, to, t, ep, cas) {
     if (from === idx(0,7)) newCas.bK = false;
   }
 
-  // Pawn double push -> en passant
   if (pp === 'p') {
     const [fr,fc] = rc(from);
     const [tr,tc] = rc(to);
@@ -378,11 +424,11 @@ function applyMove(b, from, to, t, ep, cas) {
   nb[to] = p;
   nb[from] = '';
 
-  // Promotion
+  // Promotion: use chosen piece, fall back to queen
   if (pp === 'p') {
     const [tr] = rc(to);
-    if (tr === 0 && t === 'w') nb[to] = 'Q';
-    if (tr === 7 && t === 'b') nb[to] = 'q';
+    if (tr === 0 && t === 'w') nb[to] = promoPiece || 'Q';
+    if (tr === 7 && t === 'b') nb[to] = promoPiece ? promoPiece.toLowerCase() : 'q';
   }
 
   return { nb, captured, newEp, newCas };
@@ -391,7 +437,6 @@ function applyMove(b, from, to, t, ep, cas) {
 function legalMovesFor(b, i, t, ep, cas) {
   return rawMoves(b, i, t, ep, cas).filter(to => {
     const { nb, newEp, newCas } = applyMove(b, i, to, t, ep, cas);
-    // Can't castle through check
     if (b[i] && b[i].toLowerCase() === 'k') {
       const [fr,fc] = rc(i);
       const [tr,tc] = rc(to);
@@ -417,23 +462,20 @@ function allLegalMoves(b, t, ep, cas) {
   return moves;
 }
 
-// Generate Standard Algebraic Notation for a move (called before applying it)
-function toSAN(b, from, to, t, ep, cas) {
+function toSAN(b, from, to, t, ep, cas, promoPiece) {
   const p = b[from];
   const pp = p.toLowerCase();
   const [fr, fc] = rc(from);
   const [tr, tc] = rc(to);
   const destSq = FILES[tc] + (8 - tr);
 
-  // Simulate the move to check for check/checkmate suffix
-  const { nb, newEp, newCas } = applyMove(b, from, to, t, ep, cas);
+  const { nb, newEp, newCas } = applyMove(b, from, to, t, ep, cas, promoPiece);
   const opp = t === 'w' ? 'b' : 'w';
   const givesCheck = inCheck(nb, opp, newEp, newCas);
   const suffix = givesCheck
     ? (allLegalMoves(nb, opp, newEp, newCas).length === 0 ? '#' : '+')
     : '';
 
-  // Castling
   if (pp === 'k' && Math.abs(tc - fc) === 2) {
     return (tc === 6 ? 'O-O' : 'O-O-O') + suffix;
   }
@@ -444,14 +486,14 @@ function toSAN(b, from, to, t, ep, cas) {
     let san = '';
     if (isCapture) san += FILES[fc] + 'x';
     san += destSq;
-    if ((t === 'w' && tr === 0) || (t === 'b' && tr === 7)) san += '=Q';
+    if ((t === 'w' && tr === 0) || (t === 'b' && tr === 7)) {
+      san += '=' + (promoPiece || 'Q');
+    }
     return san + suffix;
   }
 
-  // Non-pawn piece
   let san = pp.toUpperCase();
 
-  // Disambiguation: find other pieces of the same type that can also reach `to`
   const ambig = [];
   for (let s = 0; s < 64; s++) {
     if (s === from || b[s] !== p) continue;
@@ -471,6 +513,7 @@ function toSAN(b, from, to, t, ep, cas) {
 }
 
 function handleSquare(i) {
+  if (pendingPromotion) return; // block input while choosing promotion piece
   if (selected === null) {
     if (!board[i] || color(board[i]) !== turn) return;
     selected = i;
@@ -489,10 +532,31 @@ function handleSquare(i) {
   render();
 }
 
+function isPromoMove(from, to) {
+  const p = board[from];
+  const [tr] = rc(to);
+  return p && p.toLowerCase() === 'p' && (tr === 0 || tr === 7);
+}
+
 function makeMove(from, to) {
-  moveLog.push(toSAN(board, from, to, turn, enPassant, castling));
-  const { nb, captured, newEp, newCas } = applyMove(board, from, to, turn, enPassant, castling);
-  history.push({ board: [...board], turn, enPassant, castling: {...castling}, capturedW: [...capturedW], capturedB: [...capturedB], moveLogLen: moveLog.length - 1 });
+  if (isPromoMove(from, to)) {
+    pendingPromotion = { from, to };
+    selected = null;
+    legalMoves = [];
+    render();
+    return;
+  }
+  commitMove(from, to, null);
+}
+
+function commitMove(from, to, promoPiece) {
+  moveLog.push(toSAN(board, from, to, turn, enPassant, castling, promoPiece));
+  const { nb, captured, newEp, newCas } = applyMove(board, from, to, turn, enPassant, castling, promoPiece);
+  history.push({
+    board: [...board], turn, enPassant, castling: {...castling},
+    capturedW: [...capturedW], capturedB: [...capturedB],
+    moveLogLen: moveLog.length - 1
+  });
   if (captured) {
     if (isWhite(captured)) capturedW.push(captured);
     else capturedB.push(captured);
@@ -500,13 +564,18 @@ function makeMove(from, to) {
   board = nb;
   enPassant = newEp;
   castling = newCas;
-  selected = null;
-  legalMoves = [];
   turn = turn === 'w' ? 'b' : 'w';
-  checkGameState(from, to);
+  checkGameState();
 }
 
-function checkGameState(lastFrom, lastTo) {
+function choosePromo(piece) {
+  const { from, to } = pendingPromotion;
+  pendingPromotion = null;
+  commitMove(from, to, piece);
+  render();
+}
+
+function checkGameState() {
   const moves = allLegalMoves(board, turn, enPassant, castling);
   const check = inCheck(board, turn, enPassant, castling);
   const name = turn === 'w' ? 'White' : 'Black';
@@ -522,6 +591,7 @@ function checkGameState(lastFrom, lastTo) {
 }
 
 function undoMove() {
+  if (pendingPromotion) { pendingPromotion = null; render(); return; }
   if (history.length === 0) return;
   const prev = history.pop();
   board = prev.board;
@@ -564,11 +634,34 @@ function renderLog() {
   body.scrollTop = body.scrollHeight;
 }
 
+function renderPromoOverlay() {
+  const overlay = document.getElementById('promo-overlay');
+  const picker = document.getElementById('promo-picker');
+  if (!pendingPromotion) {
+    overlay.classList.remove('active');
+    return;
+  }
+  overlay.classList.add('active');
+  picker.innerHTML = '';
+  const t = turn; // whose turn triggered the pending promo
+  const pieces = t === 'w'
+    ? [['Q','♕'],['R','♖'],['B','♗'],['N','♘']]
+    : [['Q','♛'],['R','♜'],['B','♝'],['N','♞']];
+  for (const [piece, glyph] of pieces) {
+    const btn = document.createElement('button');
+    btn.className = 'promo-btn ' + (t === 'w' ? 'piece-w' : 'piece-b');
+    btn.textContent = glyph;
+    btn.title = { Q:'Queen', R:'Rook', B:'Bishop', N:'Knight' }[piece];
+    btn.onclick = () => choosePromo(piece);
+    picker.appendChild(btn);
+  }
+}
+
 function render() {
   const boardEl = document.getElementById('board');
   boardEl.innerHTML = '';
   const kingInCheck = turn && inCheck(board, turn, enPassant, castling) ? findKing(board, turn) : -1;
-  // get last move squares from board diff — use history state
+
   let lmFrom = -1, lmTo = -1;
   if (history.length > 0) {
     const prev = history[history.length-1].board;
@@ -577,7 +670,8 @@ function render() {
     if (diffs.length >= 2) { lmFrom = diffs[0]; lmTo = diffs[diffs.length-1]; }
   }
 
-  for (let i = 0; i < 64; i++) {
+  for (let d = 0; d < 64; d++) {
+    const i = flipped ? 63 - d : d;
     const [r, c] = rc(i);
     const sq = document.createElement('div');
     const isLight = (r + c) % 2 === 0;
@@ -597,18 +691,20 @@ function render() {
     boardEl.appendChild(sq);
   }
 
-  // Rank labels (8 down to 1)
+  // Rank labels
   const rl = document.getElementById('rank-labels');
   rl.innerHTML = '';
-  for (let r = 0; r < 8; r++) {
+  for (let d = 0; d < 8; d++) {
+    const r = flipped ? d : 7 - d;
     const s = document.createElement('span');
-    s.textContent = 8 - r;
+    s.textContent = r + 1;
     rl.appendChild(s);
   }
   // File labels
   const fl = document.getElementById('file-labels');
   fl.innerHTML = '';
-  for (const f of ['a','b','c','d','e','f','g','h']) {
+  const fileOrder = flipped ? 'hgfedcba' : 'abcdefgh';
+  for (const f of fileOrder) {
     const s = document.createElement('span');
     s.textContent = f;
     fl.appendChild(s);
@@ -618,8 +714,10 @@ function render() {
   document.getElementById('cap-white').textContent = capturedW.map(p=>PIECES[p]).join('');
 
   renderLog();
+  renderPromoOverlay();
 }
 
+flipped = false;
 newGame();
 </script>
 </body>
