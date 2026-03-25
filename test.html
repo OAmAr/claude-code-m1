@@ -369,12 +369,12 @@ describe('Sliding pieces', () => {
   });
 
   it('bishop on empty board from d4 has 13 moves', () => {
-    const b = place({ 'd4': 'B', 'a1': 'K', 'h8': 'k' });
+    const b = place({ 'd4': 'B', 'b1': 'K', 'a8': 'k' });
     expect(legalMovesFor(b, sq('d4'), 'w', null, CAS_NONE)).toHaveLength(13);
   });
 
   it('queen on empty board from d4 has 27 moves', () => {
-    const b = place({ 'd4': 'Q', 'a1': 'K', 'h8': 'k' });
+    const b = place({ 'd4': 'Q', 'b1': 'K', 'a8': 'k' });
     expect(legalMovesFor(b, sq('d4'), 'w', null, CAS_NONE)).toHaveLength(27);
   });
 
