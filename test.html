@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chess Tests</title>
+<style>
+  body { background: #1a1a2e; color: #eee; font-family: monospace; padding: 24px; }
+  h1 { color: #f0c040; margin-bottom: 20px; }
+  .suite { margin-bottom: 24px; }
+  .suite-name { font-size: 1.1rem; color: #aaa; margin-bottom: 8px; border-bottom: 1px solid #333; padding-bottom: 4px; }
+  .test { padding: 4px 0; display: flex; gap: 10px; align-items: baseline; }
+  .pass { color: #4caf50; }
+  .fail { color: #e05050; }
+  .icon { width: 16px; }
+  #summary { margin-top: 24px; font-size: 1.2rem; padding: 12px; border-radius: 6px; }
+  .all-pass { background: #1b3a1b; color: #4caf50; }
+  .has-fail { background: #3a1b1b; color: #e05050; }
+</style>
+</head>
+<body>
+<h1>Chess — Test Suite</h1>
+<div id="output"></div>
+<div id="summary"></div>
+
+<script>
+// ── Chess logic (extracted from index.html) ──────────────────────────────────
+
+const PIECES = {
+  K:'♔', Q:'♕', R:'♖', B:'♗', N:'♘', P:'♙',
+  k:'♚', q:'♛', r:'♜', b:'♝', n:'♞', p:'♟'
+};
+
+const INIT = [
+  'r','n','b','q','k','b','n','r',
+  'p','p','p','p','p','p','p','p',
+  '','','','','','','','',
+  '','','','','','','','',
+  '','','','','','','','',
+  '','','','','','','','',
+  'P','P','P','P','P','P','P','P',
+  'R','N','B','Q','K','B','N','R'
+];
+
+function isWhite(p) { return p && p === p.toUpperCase(); }
+function isBlack(p) { return p && p === p.toLowerCase(); }
+function color(p) { return isWhite(p) ? 'w' : 'b'; }
+function enemy(p, t) { return t === 'w' ? isBlack(p) : isWhite(p); }
+function friend(p, t) { return t === 'w' ? isWhite(p) : isBlack(p); }
+function idx(r, c) { return r * 8 + c; }
+function rc(i) { return [Math.floor(i/8), i%8]; }
+function isInBounds(r, c) { return r >= 0 && r < 8 && c >= 0 && c < 8; }
+
+function slide(b, r, c, dr, dc, t) {
+  const moves = [];
+  let nr = r+dr, nc = c+dc;
+  while (isInBounds(nr, nc)) {
+    const sq = b[idx(nr,nc)];
+    if (!sq) { moves.push(idx(nr,nc)); }
+    else { if (enemy(sq, t)) moves.push(idx(nr,nc)); break; }
+    nr += dr; nc += dc;
+  }
+  return moves;
+}
+
+function rawMoves(b, i, t, ep, cas) {
+  const [r, c] = rc(i);
+  const p = b[i];
+  if (!p || color(p) !== t) return [];
+  const moves = [];
+  const pp = p.toLowerCase();
+  if (pp === 'p') {
+    const dir = t === 'w' ? -1 : 1;
+    const startRow = t === 'w' ? 6 : 1;
+    if (isInBounds(r+dir, c) && !b[idx(r+dir,c)]) {
+      moves.push(idx(r+dir,c));
+      if (r === startRow && !b[idx(r+2*dir,c)]) moves.push(idx(r+2*dir,c));
+    }
+    for (const dc of [-1,1]) {
+      if (isInBounds(r+dir, c+dc)) {
+        const sq = b[idx(r+dir,c+dc)];
+        if (enemy(sq, t)) moves.push(idx(r+dir,c+dc));
+        if (ep === idx(r+dir,c+dc)) moves.push(idx(r+dir,c+dc));
+      }
+    }
+  }
+  else if (pp === 'n') {
+    for (const [dr,dc] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]])
+      if (isInBounds(r+dr,c+dc) && !friend(b[idx(r+dr,c+dc)],t))
+        moves.push(idx(r+dr,c+dc));
+  }
+  else if (pp === 'b') {
+    for (const [dr,dc] of [[-1,-1],[-1,1],[1,-1],[1,1]])
+      moves.push(...slide(b,r,c,dr,dc,t));
+  }
+  else if (pp === 'r') {
+    for (const [dr,dc] of [[-1,0],[1,0],[0,-1],[0,1]])
+      moves.push(...slide(b,r,c,dr,dc,t));
+  }
+  else if (pp === 'q') {
+    for (const [dr,dc] of [[-1,-1],[-1,1],[1,-1],[1,1],[-1,0],[1,0],[0,-1],[0,1]])
+      moves.push(...slide(b,r,c,dr,dc,t));
+  }
+  else if (pp === 'k') {
+    for (const [dr,dc] of [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]])
+      if (isInBounds(r+dr,c+dc) && !friend(b[idx(r+dr,c+dc)],t))
+        moves.push(idx(r+dr,c+dc));
+    if (t === 'w' && r === 7 && c === 4) {
+      if (cas.wK && !b[idx(7,5)] && !b[idx(7,6)] && b[idx(7,7)]==='R') moves.push(idx(7,6));
+      if (cas.wQ && !b[idx(7,3)] && !b[idx(7,2)] && !b[idx(7,1)] && b[idx(7,0)]==='R') moves.push(idx(7,2));
+    }
+    if (t === 'b' && r === 0 && c === 4) {
+      if (cas.bK && !b[idx(0,5)] && !b[idx(0,6)] && b[idx(0,7)]==='r') moves.push(idx(0,6));
+      if (cas.bQ && !b[idx(0,3)] && !b[idx(0,2)] && !b[idx(0,1)] && b[idx(0,0)]==='r') moves.push(idx(0,2));
+    }
+  }
+  return moves;
+}
+
+function findKing(b, t) { return b.indexOf(t === 'w' ? 'K' : 'k'); }
+
+function isAttacked(b, i, byColor, ep, cas) {
+  for (let s = 0; s < 64; s++)
+    if (b[s] && color(b[s]) === byColor)
+      if (rawMoves(b, s, byColor, ep, cas).includes(i)) return true;
+  return false;
+}
+
+function inCheck(b, t, ep, cas) {
+  return isAttacked(b, findKing(b,t), t==='w'?'b':'w', ep, cas);
+}
+
+function applyMove(b, from, to, t, ep, cas) {
+  const nb = [...b];
+  const p = nb[from];
+  const pp = p.toLowerCase();
+  let captured = nb[to] || null;
+  let newEp = null;
+  const newCas = {...cas};
+  if (pp === 'p' && to === ep) {
+    const capRow = t === 'w' ? rc(to)[0]+1 : rc(to)[0]-1;
+    captured = nb[idx(capRow, rc(to)[1])];
+    nb[idx(capRow, rc(to)[1])] = '';
+  }
+  if (pp === 'k') {
+    const [fr,fc] = rc(from); const [tr,tc] = rc(to);
+    if (Math.abs(tc-fc) === 2) {
+      if (tc === 6) { nb[idx(fr,5)] = nb[idx(fr,7)]; nb[idx(fr,7)] = ''; }
+      if (tc === 2) { nb[idx(fr,3)] = nb[idx(fr,0)]; nb[idx(fr,0)] = ''; }
+    }
+    if (t === 'w') { newCas.wK = false; newCas.wQ = false; }
+    else { newCas.bK = false; newCas.bQ = false; }
+  }
+  if (pp === 'r') {
+    if (from === idx(7,0)) newCas.wQ = false;
+    if (from === idx(7,7)) newCas.wK = false;
+    if (from === idx(0,0)) newCas.bQ = false;
+    if (from === idx(0,7)) newCas.bK = false;
+  }
+  if (pp === 'p') {
+    const [fr,fc] = rc(from); const [tr,tc] = rc(to);
+    if (Math.abs(tr-fr) === 2) newEp = idx((fr+tr)/2, fc);
+  }
+  nb[to] = p; nb[from] = '';
+  if (pp === 'p') {
+    const [tr] = rc(to);
+    if (tr === 0 && t === 'w') nb[to] = 'Q';
+    if (tr === 7 && t === 'b') nb[to] = 'q';
+  }
+  return { nb, captured, newEp, newCas };
+}
+
+function legalMovesFor(b, i, t, ep, cas) {
+  return rawMoves(b, i, t, ep, cas).filter(to => {
+    const { nb, newEp, newCas } = applyMove(b, i, to, t, ep, cas);
+    if (b[i] && b[i].toLowerCase() === 'k') {
+      const [fr,fc] = rc(i); const [tr,tc] = rc(to);
+      if (Math.abs(tc-fc) === 2) {
+        const step = tc > fc ? 1 : -1;
+        if (isAttacked(b, i, t==='w'?'b':'w', ep, cas)) return false;
+        if (isAttacked(b, idx(fr,fc+step), t==='w'?'b':'w', ep, cas)) return false;
+      }
+    }
+    return !inCheck(nb, t, newEp, newCas);
+  });
+}
+
+function allLegalMoves(b, t, ep, cas) {
+  const moves = [];
+  for (let i = 0; i < 64; i++)
+    if (b[i] && color(b[i]) === t)
+      for (const to of legalMovesFor(b, i, t, ep, cas))
+        moves.push([i, to]);
+  return moves;
+}
+
+// Helper: build an empty board with pieces placed by algebraic notation
+// e.g. place({ 'e1': 'K', 'e8': 'k' })
+function place(pieces) {
+  const b = new Array(64).fill('');
+  const files = 'abcdefgh';
+  for (const [sq, piece] of Object.entries(pieces)) {
+    const c = files.indexOf(sq[0]);
+    const r = 8 - parseInt(sq[1]);
+    b[idx(r, c)] = piece;
+  }
+  return b;
+}
+
+function sq(alg) {
+  const files = 'abcdefgh';
+  return idx(8 - parseInt(alg[1]), files.indexOf(alg[0]));
+}
+
+const CAS_NONE = { wK: false, wQ: false, bK: false, bQ: false };
+const CAS_ALL  = { wK: true,  wQ: true,  bK: true,  bQ: true  };
+
+// ── Test runner ───────────────────────────────────────────────────────────────
+
+let passed = 0, failed = 0;
+const suites = [];
+let currentSuite = null;
+
+function describe(name, fn) {
+  currentSuite = { name, tests: [] };
+  suites.push(currentSuite);
+  fn();
+}
+
+function it(name, fn) {
+  try {
+    fn();
+    currentSuite.tests.push({ name, ok: true });
+    passed++;
+  } catch(e) {
+    currentSuite.tests.push({ name, ok: false, err: e.message });
+    failed++;
+  }
+}
+
+function expect(val) {
+  return {
+    toBe(expected) {
+      if (val !== expected) throw new Error(`expected ${JSON.stringify(expected)}, got ${JSON.stringify(val)}`);
+    },
+    toContain(item) {
+      if (!val.includes(item)) throw new Error(`expected array to contain ${item}`);
+    },
+    notToContain(item) {
+      if (val.includes(item)) throw new Error(`expected array NOT to contain ${item}`);
+    },
+    toHaveLength(n) {
+      if (val.length !== n) throw new Error(`expected length ${n}, got ${val.length}`);
+    },
+    toBeGreaterThan(n) {
+      if (val <= n) throw new Error(`expected ${val} > ${n}`);
+    }
+  };
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+describe('Initial board', () => {
+  it('has correct pieces in starting position', () => {
+    expect(INIT[sq('e1')]).toBe('K');
+    expect(INIT[sq('e8')]).toBe('k');
+    expect(INIT[sq('d1')]).toBe('Q');
+    expect(INIT[sq('d8')]).toBe('q');
+    expect(INIT[sq('a1')]).toBe('R');
+    expect(INIT[sq('h8')]).toBe('r');
+  });
+
+  it('white has 20 legal moves at start', () => {
+    expect(allLegalMoves(INIT, 'w', null, CAS_ALL)).toHaveLength(20);
+  });
+
+  it('black has 20 legal moves at start', () => {
+    expect(allLegalMoves(INIT, 'b', null, CAS_ALL)).toHaveLength(20);
+  });
+});
+
+describe('Pawn moves', () => {
+  it('white pawn on starting rank can move 1 or 2 squares', () => {
+    const moves = legalMovesFor(INIT, sq('e2'), 'w', null, CAS_NONE);
+    expect(moves).toContain(sq('e3'));
+    expect(moves).toContain(sq('e4'));
+    expect(moves).toHaveLength(2);
+  });
+
+  it('white pawn not on starting rank can only move 1 square', () => {
+    const b = place({ 'e3': 'P', 'e1': 'K', 'e8': 'k' });
+    const moves = legalMovesFor(b, sq('e3'), 'w', null, CAS_NONE);
+    expect(moves).toHaveLength(1);
+    expect(moves).toContain(sq('e4'));
+  });
+
+  it('white pawn blocked cannot move', () => {
+    const b = place({ 'e4': 'P', 'e5': 'p', 'e1': 'K', 'e8': 'k' });
+    expect(legalMovesFor(b, sq('e4'), 'w', null, CAS_NONE)).toHaveLength(0);
+  });
+
+  it('white pawn captures diagonally', () => {
+    const b = place({ 'e4': 'P', 'd5': 'r', 'f5': 'n', 'e1': 'K', 'e8': 'k' });
+    const moves = legalMovesFor(b, sq('e4'), 'w', null, CAS_NONE);
+    expect(moves).toContain(sq('d5'));
+    expect(moves).toContain(sq('f5'));
+  });
+
+  it('white pawn cannot capture its own piece', () => {
+    const b = place({ 'e4': 'P', 'd5': 'R', 'e1': 'K', 'e8': 'k' });
+    expect(legalMovesFor(b, sq('e4'), 'w', null, CAS_NONE)).notToContain(sq('d5'));
+  });
+
+  it('en passant capture', () => {
+    // White pawn on e5, black pawn just double-pushed to d5, ep square = d6
+    const b = place({ 'e5': 'P', 'd5': 'p', 'e1': 'K', 'e8': 'k' });
+    const epSquare = sq('d6');
+    const moves = legalMovesFor(b, sq('e5'), 'w', epSquare, CAS_NONE);
+    expect(moves).toContain(epSquare);
+  });
+
+  it('en passant removes captured pawn', () => {
+    const b = place({ 'e5': 'P', 'd5': 'p', 'e1': 'K', 'e8': 'k' });
+    const { nb } = applyMove(b, sq('e5'), sq('d6'), 'w', sq('d6'), CAS_NONE);
+    expect(nb[sq('d5')]).toBe('');
+    expect(nb[sq('d6')]).toBe('P');
+  });
+
+  it('white pawn promotes to queen on rank 8', () => {
+    const b = place({ 'e7': 'P', 'e1': 'K', 'e8': 'k' });
+    // Move king out of the way first — use a board where king isn't blocking
+    const b2 = place({ 'e7': 'P', 'a1': 'K', 'h8': 'k' });
+    const { nb } = applyMove(b2, sq('e7'), sq('e8'), 'w', null, CAS_NONE);
+    expect(nb[sq('e8')]).toBe('Q');
+  });
+
+  it('black pawn promotes to queen on rank 1', () => {
+    const b = place({ 'e2': 'p', 'a1': 'K', 'h8': 'k' });
+    const { nb } = applyMove(b, sq('e2'), sq('e1'), 'b', null, CAS_NONE);
+    expect(nb[sq('e1')]).toBe('q');
+  });
+});
+
+describe('Knight moves', () => {
+  it('knight in center has 8 moves', () => {
+    const b = place({ 'd4': 'N', 'a1': 'K', 'h8': 'k' });
+    expect(legalMovesFor(b, sq('d4'), 'w', null, CAS_NONE)).toHaveLength(8);
+  });
+
+  it('knight in corner has 2 moves', () => {
+    const b = place({ 'a1': 'N', 'h1': 'K', 'h8': 'k' });
+    expect(legalMovesFor(b, sq('a1'), 'w', null, CAS_NONE)).toHaveLength(2);
+  });
+
+  it('knight jumps over pieces', () => {
+    // Surround d4 with pawns, knight should still have moves
+    const b = place({
+      'd4': 'N', 'c4': 'P', 'e4': 'P', 'd3': 'P', 'd5': 'P',
+      'a1': 'K', 'h8': 'k'
+    });
+    expect(legalMovesFor(b, sq('d4'), 'w', null, CAS_NONE).length).toBeGreaterThan(0);
+  });
+});
+
+describe('Sliding pieces', () => {
+  it('rook on empty board has 14 moves', () => {
+    const b = place({ 'd4': 'R', 'a1': 'K', 'h8': 'k' });
+    expect(legalMovesFor(b, sq('d4'), 'w', null, CAS_NONE)).toHaveLength(14);
+  });
+
+  it('bishop on empty board from d4 has 13 moves', () => {
+    const b = place({ 'd4': 'B', 'a1': 'K', 'h8': 'k' });
+    expect(legalMovesFor(b, sq('d4'), 'w', null, CAS_NONE)).toHaveLength(13);
+  });
+
+  it('queen on empty board from d4 has 27 moves', () => {
+    const b = place({ 'd4': 'Q', 'a1': 'K', 'h8': 'k' });
+    expect(legalMovesFor(b, sq('d4'), 'w', null, CAS_NONE)).toHaveLength(27);
+  });
+
+  it('rook blocked by own piece cannot pass through', () => {
+    const b = place({ 'a1': 'R', 'a4': 'P', 'h1': 'K', 'h8': 'k' });
+    const moves = legalMovesFor(b, sq('a1'), 'w', null, CAS_NONE);
+    expect(moves).notToContain(sq('a5'));
+    expect(moves).notToContain(sq('a4')); // can't capture own piece
+  });
+
+  it('rook can capture enemy but not pass through', () => {
+    const b = place({ 'a1': 'R', 'a4': 'p', 'h1': 'K', 'h8': 'k' });
+    const moves = legalMovesFor(b, sq('a1'), 'w', null, CAS_NONE);
+    expect(moves).toContain(sq('a4'));
+    expect(moves).notToContain(sq('a5'));
+  });
+});
+
+describe('Check detection', () => {
+  it('detects king in check from rook', () => {
+    const b = place({ 'e1': 'K', 'e8': 'r', 'a8': 'k' });
+    expect(inCheck(b, 'w', null, CAS_NONE)).toBe(true);
+  });
+
+  it('detects king not in check', () => {
+    const b = place({ 'e1': 'K', 'd8': 'r', 'a8': 'k' });
+    expect(inCheck(b, 'w', null, CAS_NONE)).toBe(false);
+  });
+
+  it('piece blocking check resolves it', () => {
+    const b = place({ 'e1': 'K', 'e5': 'R', 'e8': 'r', 'a8': 'k' });
+    expect(inCheck(b, 'w', null, CAS_NONE)).toBe(false);
+  });
+
+  it('cannot move into check', () => {
+    // King on e1, rook on d8 — king cannot move to d1
+    const b = place({ 'e1': 'K', 'd8': 'r', 'a8': 'k' });
+    const moves = legalMovesFor(b, sq('e1'), 'w', null, CAS_NONE);
+    expect(moves).notToContain(sq('d1'));
+  });
+
+  it('must resolve check — pinned piece cannot move', () => {
+    // King on e1, own rook on e4 blocking enemy rook on e8 — rook is pinned
+    const b = place({ 'e1': 'K', 'e4': 'R', 'e8': 'r', 'a8': 'k' });
+    const moves = legalMovesFor(b, sq('e4'), 'w', null, CAS_NONE);
+    // Can only move along the e-file (stay in the pin)
+    for (const m of moves) {
+      const [mr, mc] = rc(m);
+      expect(mc).toBe(4); // must stay on e-file
+    }
+  });
+});
+
+describe('Checkmate & Stalemate', () => {
+  it('fool\'s mate is checkmate', () => {
+    // 1. f3 e5 2. g4 Qh4#
+    let b = [...INIT];
+    let cas = {...CAS_ALL};
+    let ep = null;
+    const moves = [
+      [sq('f2'), sq('f3'), 'w'],
+      [sq('e7'), sq('e5'), 'b'],
+      [sq('g2'), sq('g4'), 'w'],
+      [sq('d8'), sq('h4'), 'b'],
+    ];
+    for (const [from, to, t] of moves) {
+      ({ nb: b, newEp: ep, newCas: cas } = applyMove(b, from, to, t, ep, cas));
+    }
+    expect(inCheck(b, 'w', ep, cas)).toBe(true);
+    expect(allLegalMoves(b, 'w', ep, cas)).toHaveLength(0);
+  });
+
+  it('stalemate has no legal moves and no check', () => {
+    // Classic stalemate: black king cornered with no moves
+    const b = place({ 'a8': 'k', 'b6': 'Q', 'c7': 'K' });
+    expect(inCheck(b, 'b', null, CAS_NONE)).toBe(false);
+    expect(allLegalMoves(b, 'b', null, CAS_NONE)).toHaveLength(0);
+  });
+
+  it('scholar\'s mate is checkmate', () => {
+    // 1.e4 e5 2.Bc4 Nc6 3.Qh5 Nf6?? 4.Qxf7#
+    let b = [...INIT];
+    let cas = {...CAS_ALL};
+    let ep = null;
+    const moves = [
+      [sq('e2'), sq('e4'), 'w'],
+      [sq('e7'), sq('e5'), 'b'],
+      [sq('f1'), sq('c4'), 'w'],
+      [sq('b8'), sq('c6'), 'b'],
+      [sq('d1'), sq('h5'), 'w'],
+      [sq('g8'), sq('f6'), 'b'],
+      [sq('h5'), sq('f7'), 'w'],
+    ];
+    for (const [from, to, t] of moves) {
+      ({ nb: b, newEp: ep, newCas: cas } = applyMove(b, from, to, t, ep, cas));
+    }
+    expect(inCheck(b, 'b', ep, cas)).toBe(true);
+    expect(allLegalMoves(b, 'b', ep, cas)).toHaveLength(0);
+  });
+});
+
+describe('Castling', () => {
+  it('white castles kingside', () => {
+    const b = place({ 'e1': 'K', 'h1': 'R', 'e8': 'k' });
+    const moves = legalMovesFor(b, sq('e1'), 'w', null, CAS_ALL);
+    expect(moves).toContain(sq('g1'));
+    const { nb } = applyMove(b, sq('e1'), sq('g1'), 'w', null, CAS_ALL);
+    expect(nb[sq('g1')]).toBe('K');
+    expect(nb[sq('f1')]).toBe('R');
+    expect(nb[sq('h1')]).toBe('');
+  });
+
+  it('white castles queenside', () => {
+    const b = place({ 'e1': 'K', 'a1': 'R', 'e8': 'k' });
+    const moves = legalMovesFor(b, sq('e1'), 'w', null, CAS_ALL);
+    expect(moves).toContain(sq('c1'));
+    const { nb } = applyMove(b, sq('e1'), sq('c1'), 'w', null, CAS_ALL);
+    expect(nb[sq('c1')]).toBe('K');
+    expect(nb[sq('d1')]).toBe('R');
+    expect(nb[sq('a1')]).toBe('');
+  });
+
+  it('cannot castle through check', () => {
+    // Enemy rook covers f1 — white cannot castle kingside
+    const b = place({ 'e1': 'K', 'h1': 'R', 'f8': 'r', 'e8': 'k' });
+    const moves = legalMovesFor(b, sq('e1'), 'w', null, CAS_ALL);
+    expect(moves).notToContain(sq('g1'));
+  });
+
+  it('cannot castle while in check', () => {
+    // Enemy rook attacks e1 directly
+    const b = place({ 'e1': 'K', 'h1': 'R', 'e8': 'r', 'a8': 'k' });
+    const moves = legalMovesFor(b, sq('e1'), 'w', null, CAS_ALL);
+    expect(moves).notToContain(sq('g1'));
+  });
+
+  it('castling rights lost after king moves', () => {
+    const b = place({ 'e1': 'K', 'h1': 'R', 'a1': 'R', 'e8': 'k' });
+    const { newCas } = applyMove(b, sq('e1'), sq('e2'), 'w', null, CAS_ALL);
+    expect(newCas.wK).toBe(false);
+    expect(newCas.wQ).toBe(false);
+  });
+
+  it('castling rights lost after rook moves', () => {
+    const b = place({ 'e1': 'K', 'h1': 'R', 'e8': 'k' });
+    const { newCas } = applyMove(b, sq('h1'), sq('h2'), 'w', null, CAS_ALL);
+    expect(newCas.wK).toBe(false);
+    expect(newCas.wQ).toBe(true); // queenside unaffected
+  });
+
+  it('black castles kingside', () => {
+    const b = place({ 'e8': 'k', 'h8': 'r', 'e1': 'K' });
+    const moves = legalMovesFor(b, sq('e8'), 'b', null, CAS_ALL);
+    expect(moves).toContain(sq('g8'));
+  });
+});
+
+// ── Render results ────────────────────────────────────────────────────────────
+
+const out = document.getElementById('output');
+for (const suite of suites) {
+  const div = document.createElement('div');
+  div.className = 'suite';
+  div.innerHTML = `<div class="suite-name">${suite.name}</div>`;
+  for (const t of suite.tests) {
+    const row = document.createElement('div');
+    row.className = 'test';
+    row.innerHTML = t.ok
+      ? `<span class="icon pass">✓</span><span class="pass">${t.name}</span>`
+      : `<span class="icon fail">✗</span><span class="fail">${t.name} — ${t.err}</span>`;
+    div.appendChild(row);
+  }
+  out.appendChild(div);
+}
+
+const summary = document.getElementById('summary');
+summary.textContent = `${passed} passed, ${failed} failed`;
+summary.className = failed === 0 ? 'all-pass' : 'has-fail';
+</script>
+</body>
+</html>
