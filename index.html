@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Chess</title>
 <style>
+  :root { --sq: min(64px, calc((100vw - 56px) / 8)); }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     background: #1a1a2e;
@@ -26,7 +27,7 @@
   #board-wrap {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
   }
   .rank-labels {
     display: flex;
@@ -35,7 +36,7 @@
   }
   .rank-labels span, .file-labels span {
     width: 20px;
-    height: 64px;
+    height: var(--sq);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -44,23 +45,23 @@
   }
   .file-labels {
     display: flex;
-    margin-left: 28px;
+    margin-left: 24px;
   }
-  .file-labels span { width: 64px; height: 20px; }
+  .file-labels span { width: var(--sq); height: 20px; }
   #board {
     display: grid;
-    grid-template-columns: repeat(8, 64px);
-    grid-template-rows: repeat(8, 64px);
+    grid-template-columns: repeat(8, var(--sq));
+    grid-template-rows: repeat(8, var(--sq));
     border: 3px solid #444;
     box-shadow: 0 8px 32px rgba(0,0,0,0.6);
   }
   .square {
-    width: 64px;
-    height: 64px;
+    width: var(--sq);
+    height: var(--sq);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 42px;
+    font-size: calc(var(--sq) * 0.65);
     cursor: pointer;
     user-select: none;
     position: relative;
@@ -72,8 +73,8 @@
   .square.legal-move::after {
     content: '';
     position: absolute;
-    width: 22px;
-    height: 22px;
+    width: calc(var(--sq) * 0.34);
+    height: calc(var(--sq) * 0.34);
     border-radius: 50%;
     background: rgba(0,0,0,0.18);
   }
@@ -81,7 +82,6 @@
     content: '';
     position: absolute;
     inset: 0;
-    border-radius: 0;
     background: transparent;
     border: 5px solid rgba(0,0,0,0.18);
     border-radius: 50%;
@@ -89,6 +89,8 @@
   .square.last-move { background: #cdd36a !important; }
   .square.last-move.dark { background: #aaa23a !important; }
   .square.in-check { background: #e05050 !important; }
+  .piece-w { color: #fff; text-shadow: 0 0 3px #000, 0 1px 4px #000; }
+  .piece-b { color: #1a1a1a; text-shadow: 0 0 2px rgba(255,255,255,0.7), 0 1px 3px rgba(255,255,255,0.5); }
   #controls {
     margin-top: 16px;
     display: flex;
@@ -462,7 +464,10 @@ function render() {
       if (board[i]) sq.classList.add('legal-capture');
       else sq.classList.add('legal-move');
     }
-    if (board[i]) sq.textContent = PIECES[board[i]];
+    if (board[i]) {
+      sq.textContent = PIECES[board[i]];
+      sq.classList.add(isWhite(board[i]) ? 'piece-w' : 'piece-b');
+    }
     sq.addEventListener('click', () => handleSquare(i));
     boardEl.appendChild(sq);
   }
