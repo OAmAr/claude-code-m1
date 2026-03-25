@@ -251,7 +251,7 @@ const INIT = [
 const FILES = 'abcdefgh';
 
 let board, turn, selected, legalMoves, history, castling, enPassant,
-    capturedW, capturedB, moveLog, pendingPromotion, flipped;
+    capturedW, capturedB, moveLog, pendingPromotion, flipped, lastMove;
 
 function newGame() {
   board = [...INIT];
@@ -265,6 +265,7 @@ function newGame() {
   capturedB = [];
   moveLog = [];
   pendingPromotion = null;
+  lastMove = null;
   render();
   setStatus("White's turn");
 }
@@ -505,7 +506,7 @@ function commitMove(from, to, promoPiece) {
   history.push({
     board: [...board], turn, enPassant, castling: {...castling},
     capturedW: [...capturedW], capturedB: [...capturedB],
-    moveLogLen: moveLog.length - 1
+    moveLogLen: moveLog.length - 1, lastMove
   });
   if (captured) {
     if (isWhite(captured)) capturedW.push(captured);
@@ -514,6 +515,7 @@ function commitMove(from, to, promoPiece) {
   board = nb;
   enPassant = newEp;
   castling = newCas;
+  lastMove = { from, to };
   turn = turn === 'w' ? 'b' : 'w';
   checkGameState();
 }
@@ -551,6 +553,7 @@ function undoMove() {
   capturedW = prev.capturedW;
   capturedB = prev.capturedB;
   moveLog.length = prev.moveLogLen;
+  lastMove = prev.lastMove;
   selected = null;
   legalMoves = [];
   setStatus(`${turn === 'w' ? 'White' : 'Black'}'s turn`);
@@ -609,13 +612,8 @@ function render() {
   const boardEl = document.getElementById('board');
   boardEl.innerHTML = '';
   const kingInCheck = turn && inCheck(board, turn, enPassant, castling) ? findKing(board, turn) : -1;
-  let lmFrom = -1, lmTo = -1;
-  if (history.length > 0) {
-    const prev = history[history.length-1].board;
-    const diffs = [];
-    for (let i = 0; i < 64; i++) if (prev[i] !== board[i]) diffs.push(i);
-    if (diffs.length >= 2) { lmFrom = diffs[0]; lmTo = diffs[diffs.length-1]; }
-  }
+  const lmFrom = lastMove ? lastMove.from : -1;
+  const lmTo   = lastMove ? lastMove.to   : -1;
   for (let d = 0; d < 64; d++) {
     const i = flipped ? 63 - d : d;
     const [r, c] = rc(i);
