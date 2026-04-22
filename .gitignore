@@ -1,0 +1,11 @@
+# DEM data files (large binaries)
+*.tif
+*.tiff
+
+# Analysis outputs
+output/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/

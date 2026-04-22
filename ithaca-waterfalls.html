@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ithaca Waterfalls</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #0d1117;
+    color: #e6edf3;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 14px 20px;
+    background: #161b22;
+    border-bottom: 1px solid #30363d;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  header h1 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: #58a6ff;
+  }
+  header p {
+    font-size: 0.8rem;
+    color: #8b949e;
+    margin-top: 2px;
+  }
+  #count-badge {
+    background: #1f6feb;
+    color: #e6edf3;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+  #main {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+  #sidebar {
+    width: 280px;
+    flex-shrink: 0;
+    background: #161b22;
+    border-right: 1px solid #30363d;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #search-wrap {
+    padding: 12px;
+    border-bottom: 1px solid #30363d;
+    flex-shrink: 0;
+  }
+  #search {
+    width: 100%;
+    padding: 7px 10px;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    color: #e6edf3;
+    font-size: 0.85rem;
+    outline: none;
+  }
+  #search:focus { border-color: #58a6ff; }
+  #filter-wrap {
+    padding: 8px 12px;
+    border-bottom: 1px solid #30363d;
+    flex-shrink: 0;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .filter-btn {
+    padding: 3px 10px;
+    border-radius: 20px;
+    border: 1px solid #30363d;
+    background: transparent;
+    color: #8b949e;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .filter-btn.active {
+    background: #1f6feb;
+    border-color: #1f6feb;
+    color: #e6edf3;
+  }
+  #list {
+    overflow-y: auto;
+    flex: 1;
+  }
+  .fall-item {
+    padding: 10px 14px;
+    border-bottom: 1px solid #21262d;
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+  .fall-item:hover { background: #1c2128; }
+  .fall-item.active { background: #1f2d3d; border-left: 3px solid #58a6ff; }
+  .fall-name {
+    font-size: 0.88rem;
+    font-weight: 500;
+    color: #e6edf3;
+  }
+  .fall-meta {
+    font-size: 0.75rem;
+    color: #8b949e;
+    margin-top: 2px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .fall-height {
+    background: #1f2d3d;
+    color: #58a6ff;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-weight: 500;
+    font-size: 0.72rem;
+  }
+  .fall-height.tall { background: #2d1f1f; color: #ff7b72; }
+  .fall-height.medium { background: #2d261f; color: #e3b341; }
+  .fall-height.short { background: #1f2d1f; color: #3fb950; }
+  #map {
+    flex: 1;
+  }
+
+  /* Leaflet popup overrides */
+  .leaflet-popup-content-wrapper {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+    color: #e6edf3;
+  }
+  .leaflet-popup-tip { background: #30363d; }
+  .leaflet-popup-content { margin: 14px 16px; }
+  .popup-name {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #58a6ff;
+    margin-bottom: 6px;
+  }
+  .popup-row {
+    font-size: 0.8rem;
+    color: #8b949e;
+    margin: 3px 0;
+    display: flex;
+    gap: 6px;
+  }
+  .popup-label { color: #6e7681; min-width: 52px; }
+  .popup-val { color: #c9d1d9; }
+  .popup-desc {
+    font-size: 0.78rem;
+    color: #8b949e;
+    margin-top: 8px;
+    line-height: 1.5;
+    border-top: 1px solid #30363d;
+    padding-top: 8px;
+  }
+
+  /* Custom marker */
+  .wf-marker {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid #0d1117;
+    cursor: pointer;
+    transition: transform 0.15s;
+  }
+  .wf-marker:hover { transform: scale(1.4); }
+  .wf-marker.tall    { background: #ff7b72; box-shadow: 0 0 6px #ff7b7288; }
+  .wf-marker.medium  { background: #e3b341; box-shadow: 0 0 6px #e3b34188; }
+  .wf-marker.short   { background: #3fb950; box-shadow: 0 0 6px #3fb95088; }
+  .wf-marker.unknown { background: #58a6ff; box-shadow: 0 0 6px #58a6ff88; }
+  .wf-marker.active { transform: scale(1.6); border-color: #fff; }
+
+  .legend {
+    position: absolute;
+    bottom: 24px;
+    right: 12px;
+    z-index: 1000;
+    background: #161b22cc;
+    backdrop-filter: blur(6px);
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 0.75rem;
+    color: #8b949e;
+  }
+  .legend-title { font-weight: 600; color: #e6edf3; margin-bottom: 6px; }
+  .legend-row { display: flex; align-items: center; gap: 7px; margin: 4px 0; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  @media (max-width: 600px) {
+    #sidebar { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Ithaca Waterfalls</h1>
+    <p>Tompkins County, New York · Gorge Country</p>
+  </div>
+  <span id="count-badge">27 falls</span>
+</header>
+
+<div id="main">
+  <div id="sidebar">
+    <div id="search-wrap">
+      <input id="search" type="text" placeholder="Search waterfalls…" autocomplete="off"/>
+    </div>
+    <div id="filter-wrap">
+      <button class="filter-btn active" data-filter="all">All</button>
+      <button class="filter-btn" data-filter="tall">Tall ≥100ft</button>
+      <button class="filter-btn" data-filter="medium">Mid 30–99ft</button>
+      <button class="filter-btn" data-filter="short">Short &lt;30ft</button>
+    </div>
+    <div id="list"></div>
+  </div>
+  <div id="map"></div>
+</div>
+
+<script>
+const FALLS = [
+  {
+    name: "Taughannock Falls",
+    lat: 42.5367, lng: -76.5969,
+    height: 215,
+    park: "Taughannock Falls State Park",
+    gorge: "Taughannock Creek",
+    desc: "One of the tallest single-drop waterfalls east of the Rocky Mountains — taller than Niagara Falls. The plunge pool is surrounded by 400-ft gorge walls."
+  },
+  {
+    name: "Lucifer Falls",
+    lat: 42.3933, lng: -76.5688,
+    height: 115,
+    park: "Robert H. Treman State Park",
+    gorge: "Enfield Creek",
+    desc: "The crown jewel of Treman's lower gorge trail. A dramatic curtain fall framed by sheer sandstone walls."
+  },
+  {
+    name: "Buttermilk Falls",
+    lat: 42.4158, lng: -76.4975,
+    height: 165,
+    park: "Buttermilk Falls State Park",
+    gorge: "Buttermilk Creek",
+    desc: "A cascading series of drops totaling ~165 ft. The upper falls spill over layered shale in a wide, foaming sheet."
+  },
+  {
+    name: "Ithaca Falls",
+    lat: 42.4527, lng: -76.4900,
+    height: 150,
+    park: "Ithaca Falls Natural Area",
+    gorge: "Fall Creek",
+    desc: "The largest waterfall within the City of Ithaca, accessible at the end of Lake Street. A thundering curtain about 150 ft tall and 175 ft wide."
+  },
+  {
+    name: "Cascadilla Falls (Upper)",
+    lat: 42.4452, lng: -76.4854,
+    height: 60,
+    park: "Cascadilla Gorge (Cornell)",
+    gorge: "Cascadilla Creek",
+    desc: "The highest drop in Cascadilla Gorge, near the upper entrance on College Avenue. Flanked by steep mossy walls."
+  },
+  {
+    name: "Cascadilla Falls (Lower)",
+    lat: 42.4400, lng: -76.4872,
+    height: 35,
+    park: "Cascadilla Gorge (Cornell)",
+    gorge: "Cascadilla Creek",
+    desc: "Near the base of Cascadilla Gorge, steps from the Arts Quad. A series of ledge drops over layered shale."
+  },
+  {
+    name: "Triphammer Falls",
+    lat: 42.4519, lng: -76.4818,
+    height: 60,
+    park: "Cornell University Campus",
+    gorge: "Fall Creek",
+    desc: "Named for the trip-hammer forges that once operated nearby. Drops into a deep plunge pool on the Cornell gorge trail."
+  },
+  {
+    name: "Wells Falls",
+    lat: 42.4536, lng: -76.4862,
+    height: 30,
+    park: "Fall Creek Gorge (Cornell)",
+    gorge: "Fall Creek",
+    desc: "A broad ledge fall upstream of Ithaca Falls, accessible via the Flat Rock swimming hole trail."
+  },
+  {
+    name: "Forest Home Falls",
+    lat: 42.4582, lng: -76.4762,
+    height: 20,
+    park: "Forest Home",
+    gorge: "Fall Creek",
+    desc: "A scenic cascade in the residential gorge section near Forest Home Drive bridge."
+  },
+  {
+    name: "Beebe Lake Falls",
+    lat: 42.4564, lng: -76.4778,
+    height: 25,
+    park: "Cornell University Campus",
+    gorge: "Fall Creek",
+    desc: "Pours into Beebe Lake just above the Cornell gorge trail. A favorite for early-morning mist views."
+  },
+  {
+    name: "Upper Enfield Falls",
+    lat: 42.4017, lng: -76.5741,
+    height: 35,
+    park: "Robert H. Treman State Park",
+    gorge: "Enfield Creek",
+    desc: "A stepped cascade at the upper entrance to Treman's gorge trail, framed by hemlocks."
+  },
+  {
+    name: "Rocky Falls (Treman)",
+    lat: 42.3970, lng: -76.5710,
+    height: 20,
+    park: "Robert H. Treman State Park",
+    gorge: "Enfield Creek",
+    desc: "A tumbling rapid section between the upper and lower gorge in Treman, with multiple small drops."
+  },
+  {
+    name: "Enfield Falls (Lower Treman)",
+    lat: 42.3910, lng: -76.5670,
+    height: 40,
+    park: "Robert H. Treman State Park",
+    gorge: "Enfield Creek",
+    desc: "Just downstream of Lucifer Falls, this layered falls marks the gorge exit near the swimming hole."
+  },
+  {
+    name: "Lick Brook Falls",
+    lat: 42.4072, lng: -76.5421,
+    height: 60,
+    park: "Arnot Forest / Finger Lakes Trail",
+    gorge: "Lick Brook",
+    desc: "A hidden gem on the southwest side of Cayuga Lake. A tall curtain fall reached by a short hike from Rte. 13."
+  },
+  {
+    name: "Podunk Falls",
+    lat: 42.4390, lng: -76.5598,
+    height: 30,
+    park: "Finger Lakes Trail",
+    gorge: "Podunk Creek",
+    desc: "A remote cascade on the Finger Lakes Trail west of Ithaca, seldom visited."
+  },
+  {
+    name: "Six Mile Creek Upper Falls",
+    lat: 42.4301, lng: -76.4614,
+    height: 45,
+    park: "Six Mile Creek Natural Area",
+    gorge: "Six Mile Creek",
+    desc: "The upper waterfall in the Six Mile Creek gorge, accessible from the Ithaca watershed trail."
+  },
+  {
+    name: "Six Mile Creek Lower Falls",
+    lat: 42.4355, lng: -76.4673,
+    height: 25,
+    park: "Six Mile Creek Natural Area",
+    gorge: "Six Mile Creek",
+    desc: "A broad ledge fall near the dam on Six Mile Creek, source of Ithaca's drinking water."
+  },
+  {
+    name: "Renwick Falls",
+    lat: 42.4490, lng: -76.5050,
+    height: 20,
+    park: "Stewart Park Area",
+    gorge: "Inlet / Cascadilla",
+    desc: "A low cascade near Renwick Golf Course where Cascadilla Creek meets the inlet."
+  },
+  {
+    name: "Ithaca Falls (Fish Ladder)",
+    lat: 42.4520, lng: -76.4890,
+    height: 12,
+    park: "Ithaca Falls Natural Area",
+    gorge: "Fall Creek",
+    desc: "The artificial fish-ladder bypass cascade beside the main Ithaca Falls, built for alewife migration."
+  },
+  {
+    name: "Newman Golf Course Cascade",
+    lat: 42.4575, lng: -76.5138,
+    height: 15,
+    park: "City of Ithaca",
+    gorge: "Cayuga Inlet tributary",
+    desc: "A small but photogenic cascade visible from the inlet trail near Newman Golf Course."
+  },
+  {
+    name: "Taughannock Upper Falls",
+    lat: 42.5395, lng: -76.5919,
+    height: 30,
+    park: "Taughannock Falls State Park",
+    gorge: "Taughannock Creek",
+    desc: "Upstream cascades above the main gorge, visible from the rim trail loop."
+  },
+  {
+    name: "Buttermilk Lower Cascade",
+    lat: 42.4125, lng: -76.4945,
+    height: 18,
+    park: "Buttermilk Falls State Park",
+    gorge: "Buttermilk Creek",
+    desc: "Near the lower picnic area, a wide sloping cascade popular with summer swimmers."
+  },
+  {
+    name: "Gorge Trail Cascade (Treman)",
+    lat: 42.3952, lng: -76.5698,
+    height: 22,
+    park: "Robert H. Treman State Park",
+    gorge: "Enfield Creek",
+    desc: "One of several named drops along the lower gorge trail between Lucifer Falls and the swimming hole."
+  },
+  {
+    name: "Mulholland Wildflower Cascade",
+    lat: 42.4642, lng: -76.4823,
+    height: 18,
+    park: "Cornell Natural Areas",
+    gorge: "Fall Creek tributary",
+    desc: "A small seasonal cascade in the Cornell Natural Areas north of campus."
+  },
+  {
+    name: "Sheldon Falls",
+    lat: 42.4199, lng: -76.5190,
+    height: 35,
+    park: "Danby State Forest",
+    gorge: "Buttermilk tributary",
+    desc: "A secluded cascade in the Danby State Forest, accessible via the Finger Lakes Trail."
+  },
+  {
+    name: "Fillmore Glen Falls (nearby)",
+    lat: 42.5607, lng: -76.4228,
+    height: 80,
+    park: "Fillmore Glen State Park",
+    gorge: "Dry Creek",
+    desc: "Just outside Tompkins County, this tall plunge fall is a 20-min drive but considered part of the Ithaca gorge family."
+  },
+  {
+    name: "Salmon Creek Falls",
+    lat: 42.5671, lng: -76.5527,
+    height: 25,
+    park: "Interlaken Area",
+    gorge: "Salmon Creek",
+    desc: "A wide low falls at the Salmon Creek State Unique Area, northwest of Ithaca near Cayuga Lake."
+  }
+];
+
+function heightClass(h) {
+  if (h === null || h === undefined) return 'unknown';
+  if (h >= 100) return 'tall';
+  if (h >= 30)  return 'medium';
+  return 'short';
+}
+
+function fmtHeight(h) {
+  return h ? h + ' ft' : '—';
+}
+
+// Update badge
+document.getElementById('count-badge').textContent = FALLS.length + ' falls';
+
+// Init map
+const map = L.map('map', {
+  center: [42.465, -76.52],
+  zoom: 12,
+  zoomControl: true
+});
+
+// Tile layers
+const topoLayer = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+  maxZoom: 17,
+  attribution: '© OpenTopoMap contributors'
+});
+
+const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '© OpenStreetMap contributors'
+});
+
+const darkLayer = L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png', {
+  maxZoom: 20,
+  attribution: '© Stadia Maps © OpenMapTiles © OpenStreetMap contributors'
+});
+
+darkLayer.addTo(map);
+
+L.control.layers({
+  'Dark': darkLayer,
+  'Topo': topoLayer,
+  'Street': osmLayer
+}, {}, { position: 'topright' }).addTo(map);
+
+// Legend
+const legendEl = document.createElement('div');
+legendEl.className = 'legend';
+legendEl.innerHTML = `
+  <div class="legend-title">Height</div>
+  <div class="legend-row"><div class="legend-dot" style="background:#ff7b72"></div> ≥ 100 ft</div>
+  <div class="legend-row"><div class="legend-dot" style="background:#e3b341"></div> 30–99 ft</div>
+  <div class="legend-row"><div class="legend-dot" style="background:#3fb950"></div> &lt; 30 ft</div>
+  <div class="legend-row"><div class="legend-dot" style="background:#58a6ff"></div> Unknown</div>
+`;
+document.getElementById('map').appendChild(legendEl);
+
+// State
+let activeIdx = null;
+let currentFilter = 'all';
+let searchVal = '';
+const markerEls = [];
+const markers = [];
+
+function makeMarkerEl(fall, i) {
+  const cls = heightClass(fall.height);
+  const el = document.createElement('div');
+  el.className = 'wf-marker ' + cls;
+  return el;
+}
+
+function makePopup(fall) {
+  const cls = heightClass(fall.height);
+  return `
+    <div class="popup-name">💧 ${fall.name}</div>
+    <div class="popup-row"><span class="popup-label">Height</span><span class="popup-val">${fmtHeight(fall.height)}</span></div>
+    <div class="popup-row"><span class="popup-label">Creek</span><span class="popup-val">${fall.gorge}</span></div>
+    <div class="popup-row"><span class="popup-label">Park</span><span class="popup-val">${fall.park}</span></div>
+    <div class="popup-desc">${fall.desc}</div>
+  `;
+}
+
+function setActive(i) {
+  // deactivate old
+  if (activeIdx !== null && markerEls[activeIdx]) {
+    markerEls[activeIdx].classList.remove('active');
+  }
+  // remove sidebar active
+  document.querySelectorAll('.fall-item').forEach(el => el.classList.remove('active'));
+
+  activeIdx = i;
+  if (i === null) return;
+
+  if (markerEls[i]) markerEls[i].classList.add('active');
+
+  // scroll sidebar item into view
+  const item = document.querySelector(`.fall-item[data-idx="${i}"]`);
+  if (item) {
+    item.classList.add('active');
+    item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+// Build markers
+FALLS.forEach((fall, i) => {
+  const el = makeMarkerEl(fall, i);
+  markerEls.push(el);
+
+  const marker = L.marker([fall.lat, fall.lng], {
+    icon: L.divIcon({ html: el, className: '', iconSize: [14, 14], iconAnchor: [7, 7] })
+  });
+
+  marker.bindPopup(makePopup(fall), { maxWidth: 260 });
+
+  marker.on('click', () => {
+    setActive(i);
+  });
+
+  marker.on('popupclose', () => {
+    if (activeIdx === i) setActive(null);
+  });
+
+  marker.addTo(map);
+  markers.push(marker);
+});
+
+// Sidebar list
+function buildList() {
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+
+  const filtered = FALLS.map((f, i) => ({ f, i })).filter(({ f, i }) => {
+    const matchSearch = searchVal === '' ||
+      f.name.toLowerCase().includes(searchVal) ||
+      f.gorge.toLowerCase().includes(searchVal) ||
+      f.park.toLowerCase().includes(searchVal);
+
+    let matchFilter = true;
+    if (currentFilter === 'tall')   matchFilter = f.height >= 100;
+    if (currentFilter === 'medium') matchFilter = f.height >= 30 && f.height < 100;
+    if (currentFilter === 'short')  matchFilter = f.height < 30;
+
+    return matchSearch && matchFilter;
+  });
+
+  // Show/hide markers
+  FALLS.forEach((f, i) => {
+    const visible = filtered.some(x => x.i === i);
+    if (visible) {
+      if (!map.hasLayer(markers[i])) markers[i].addTo(map);
+    } else {
+      if (map.hasLayer(markers[i])) markers[i].remove();
+    }
+  });
+
+  filtered.sort((a, b) => (b.f.height || 0) - (a.f.height || 0));
+
+  filtered.forEach(({ f, i }) => {
+    const cls = heightClass(f.height);
+    const item = document.createElement('div');
+    item.className = 'fall-item' + (activeIdx === i ? ' active' : '');
+    item.dataset.idx = i;
+    item.innerHTML = `
+      <div class="fall-name">${f.name}</div>
+      <div class="fall-meta">
+        <span class="fall-height ${cls}">${fmtHeight(f.height)}</span>
+        <span>${f.gorge}</span>
+      </div>
+    `;
+    item.addEventListener('click', () => {
+      map.setView([f.lat, f.lng], 14, { animate: true });
+      markers[i].openPopup();
+      setActive(i);
+    });
+    list.appendChild(item);
+  });
+}
+
+buildList();
+
+// Search
+document.getElementById('search').addEventListener('input', e => {
+  searchVal = e.target.value.toLowerCase().trim();
+  buildList();
+});
+
+// Filters
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentFilter = btn.dataset.filter;
+    buildList();
+  });
+});
+</script>
+</body>
+</html>
